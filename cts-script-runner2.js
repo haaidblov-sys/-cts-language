@@ -5,9 +5,23 @@ function replaceAllVars(t, LV, LVN) {
         for (let i = 0; i < LV[S].length; i++) t = t.replaceAll("<" + n + "[" + i + "]>", LV[S][i]);
     }
     for (let D = 0; D < LVN.length; D++) if (Array.isArray(LV[D])) t = t.replaceAll(LVN[D], LV[D].join(", "));
+    t = evalMath(t);
     return t;
 }
-
+function evalMath(t) {
+  // Find every [ Math ... ] and replace with the calculated result
+  return t.replace(/\[\s*Math\s+([^\]]+)\]/g, function(match, expr) {
+    try {
+      // Only allow numbers, spaces, + - * / ( ) . %
+      let safe = expr.replace(/[^0-9+\-*/() .%]/g, "");
+      if (safe.trim() === "") return match;
+      let result = Function("return (" + safe + ")")();
+      return result;
+    } catch (e) {
+      return "[MathError]";
+    }
+  });
+}
 function escapeHTML(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -118,22 +132,25 @@ function RunCTS(script) {
                 else AllBugs += "Line " + (i + 1) + ": Set: Variable not found<br>";
             }
         }
-
-        else if (L.startsWith("Calc {")) {
-            if (L.includes("{") && L.includes("}")) {
-                let m = L.substring(L.indexOf("{") + 1, L.lastIndexOf("}")).trim();
-                m = replaceAllVars(m, LV, LVN);
-                let r;
-                if (m.includes("+")) { let p = m.split("+"); r = Number(p[0]) + Number(p[1]); }
-                else if (m.includes("-")) { let p = m.split("-"); r = Number(p[0]) - Number(p[1]); }
-                else if (m.includes("*")) { let p = m.split("*"); r = Number(p[0]) * Number(p[1]); }
-                else if (m.includes("/")) { let p = m.split("/"); r = Number(p[0]) / Number(p[1]); }
-                else r = Number(m);
-                let p = LVN.indexOf("<Result>");
-                if (p !== -1) LV[p] = r;
-                else { LVN.push("<Result>"); LV.push(r); }
-            }
+else if (L.startsWith("Calc {")) {
+    if (L.includes("{") && L.includes("}")) {
+        let m = L.substring(L.indexOf("{") + 1, L.lastIndexOf("}")).trim();
+        m = replaceAllVars(m, LV, LVN);
+        
+        // Let evalMath handle it (supports multiple operators)
+        let resultStr = evalMath("[ Math " + m + " ]");
+        let r = Number(resultStr);
+        
+        if (isNaN(r)) {
+            AllBugs += "Line " + (i + 1) + ": Calc: Bad math (" + m + ")<br>";
+        } else {
+            let p = LVN.indexOf("<Result>");
+            if (p !== -1) LV[p] = r;
+            else { LVN.push("<Result>"); LV.push(r); }
         }
+    } else AllBugs += "Line " + (i + 1) + ": Calc: Missing braces<br>";
+}
+        
 
         else if (L.startsWith("Repeat {")) {
             if (L.includes("{") && L.includes("}")) {
@@ -207,7 +224,7 @@ function RunCTS(script) {
         else if (L.startsWith("Jump [")) {
             let tS = L.indexOf("[") + 1;
             let tE = L.lastIndexOf("]");
-            let n = Number(L.substring(tS, tE).trim()) - 1;
+            let n = Number(L.substring(tS, tE).trim());
             if (!isNaN(n) && n > i && n < Lines.length) i = n - 1;
         }
 
@@ -275,4 +292,4 @@ function RunCTS(script) {
         color: NewColor,
         raw: MainOP
     };
-}
+} 
